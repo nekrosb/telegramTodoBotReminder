@@ -301,7 +301,8 @@ async def reminder_title_handler(message: Message, state: FSMContext) -> None:
 async def manual_date_handler(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
     language = data.get("language", "en")
-    await state.set_state(ReminderCreation.date)
+    editing = await state.get_state() == ReminderEditing.date.state
+    await state.set_state(ReminderEditing.date if editing else ReminderCreation.date)
     await callback.message.answer(
         "Enter the event date (YYYY-MM-DD):"
         if language == "en"
@@ -322,7 +323,8 @@ async def calendar_date_handler(
         await callback.answer(str(error), show_alert=True)
         return
     await state.update_data(date=selected_date)
-    await state.set_state(ReminderCreation.time)
+    editing = await state.get_state() == ReminderEditing.date.state
+    await state.set_state(ReminderEditing.time if editing else ReminderCreation.time)
     await callback.message.edit_text(
         f"Selected date: {selected_date}\nEnter the event time (HH:MM):"
         if data.get("language", "en") == "en"
@@ -483,20 +485,44 @@ async def edit_reminder_handler(
     if reminder is None:
         await message.answer("Reminder not found.")
         return
+    user = await users.get_by_telegram_id(database, message.from_user.id)
+    if user is None:
+        await message.answer("Please use /start first.")
+        return
     await state.set_state(ReminderEditing.title)
-    await state.update_data(reminder_id=reminder_id)
-    await message.answer("Enter the new title, or /cancel to stop:")
+    await state.update_data(
+        reminder_id=reminder_id,
+        language=user["language"],
+        timezone=user["timezone"],
+    )
+    await message.answer(
+        "Enter the new title:" if user["language"] == "en" else "Введите новое название:",
+        reply_markup=cancel_keyboard(user["language"]),
+    )
 
 
 @router.message(ReminderEditing.title)
 async def edit_title_handler(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    language = data.get("language", "en")
     title = (message.text or "").strip()
     if not title:
-        await message.answer("The title cannot be empty. Enter a title:")
+        await message.answer(
+            "The title cannot be empty. Enter a title:"
+            if language == "en"
+            else "Название не может быть пустым. Введите название:"
+        )
         return
     await state.update_data(title=title)
     await state.set_state(ReminderEditing.date)
-    await message.answer("Enter the new event date (YYYY-MM-DD):")
+    await message.answer(
+        "Enter the new event date (YYYY-MM-DD):"
+        if language == "en"
+        else "Введите новую дату события (ГГГГ-ММ-ДД):",
+        reply_markup=date_picker_keyboard(
+            date.today().year, date.today().month, language
+        ),
+    )
 
 
 @router.message(ReminderEditing.date)
@@ -504,6 +530,7 @@ async def edit_date_handler(
     message: Message, state: FSMContext, database: aiosqlite.Connection
 ) -> None:
     date_text = (message.text or "").strip()
+    data = await state.get_data()
     if message.from_user is None:
         return
     user = await users.get_by_telegram_id(database, message.from_user.id)
@@ -515,7 +542,11 @@ async def edit_date_handler(
         return
     await state.update_data(date=date_text)
     await state.set_state(ReminderEditing.time)
-    await message.answer("Enter the new event time (HH:MM):")
+    await message.answer(
+        "Enter the new event time (HH:MM):"
+        if data.get("language", "en") == "en"
+        else "Введите новое время события (ЧЧ:ММ):"
+    )
 
 
 @router.message(ReminderEditing.time)
@@ -550,12 +581,21 @@ async def edit_time_handler(
     await state.clear()
     if updated:
         await reminder_scheduler.restore()
-    await message.answer("Reminder updated." if updated else "Reminder not found.")
+    await message.answer(
+        "Reminder updated." if updated else "Reminder not found."
+    )
+    if updated:
+        await message.answer(
+            "Choose an action:" if user["language"] == "en" else "Выберите действие:",
+            reply_markup=main_menu_keyboard(user["language"]),
+        )
 
 
 @router.callback_query(lambda callback: callback.data.startswith("reminder:"))
 async def reminder_action_handler(
-    callback: CallbackQuery, database: aiosqlite.Connection
+    callback: CallbackQuery,
+    state: FSMContext,
+    database: aiosqlite.Connection,
 ) -> None:
     if callback.from_user is None or callback.message is None:
         await callback.answer()
@@ -591,9 +631,17 @@ async def reminder_action_handler(
             reply_markup=reminder_actions_keyboard(reminder_id, language)
         )
     elif action == "edit":
-        await callback.answer(
-            "Use /editreminder <id> to edit this reminder.", show_alert=True
+        await state.set_state(ReminderEditing.title)
+        await state.update_data(
+            reminder_id=reminder_id,
+            language=language,
+            timezone=user["timezone"] if user else "UTC",
         )
+        await callback.message.answer(
+            "Enter the new title:" if language == "en" else "Введите новое название:",
+            reply_markup=cancel_keyboard(language),
+        )
+        await callback.answer()
         return
     await callback.answer()
 

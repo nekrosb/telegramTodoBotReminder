@@ -44,7 +44,7 @@ Python 3.12 or newer is required.
 3. Start the bot:
 
    ```bash
-   python -m telegramtodobotreminder.main
+         efdbac6 feat: add button navigation and date picker
    ```
 
    The installed console command is also available:
