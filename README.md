@@ -7,6 +7,8 @@ Users can also select and update an IANA timezone, with DST-aware local time
 conversion utilities.
 The `/newreminder` command starts a guided reminder creation flow, and
 `/cancel` can be used to stop it.
+Use `/reminders` to list reminders, `/reminder <id>` to view one,
+`/editreminder <id>` to edit one, and the inline delete action to remove one.
 
 ## Running locally
 

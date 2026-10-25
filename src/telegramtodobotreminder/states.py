@@ -5,3 +5,9 @@ class ReminderCreation(StatesGroup):
     title = State()
     date = State()
     time = State()
+
+
+class ReminderEditing(StatesGroup):
+    title = State()
+    date = State()
+    time = State()

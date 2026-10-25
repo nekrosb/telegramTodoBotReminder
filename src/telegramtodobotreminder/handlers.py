@@ -1,14 +1,19 @@
 import aiosqlite
 from datetime import datetime
 from aiogram import Router
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from telegramtodobotreminder.database import reminders, users
-from telegramtodobotreminder.keyboards import language_keyboard, timezone_keyboard
+from telegramtodobotreminder.keyboards import (
+    delete_confirmation_keyboard,
+    language_keyboard,
+    reminder_actions_keyboard,
+    timezone_keyboard,
+)
 from telegramtodobotreminder.reminder_flow import ReminderInputError, parse_reminder_datetime
-from telegramtodobotreminder.states import ReminderCreation
+from telegramtodobotreminder.states import ReminderCreation, ReminderEditing
 from telegramtodobotreminder.timezones import get_timezone
 
 
@@ -183,3 +188,173 @@ async def reminder_time_handler(
     await message.answer(
         f"Reminder #{reminder_id} created for {remind_at.isoformat()} UTC."
     )
+
+
+@router.message(Command("reminders"))
+async def reminders_list_handler(
+    message: Message, database: aiosqlite.Connection
+) -> None:
+    if message.from_user is None:
+        return
+    items = await reminders.list_for_user(database, message.from_user.id)
+    if not items:
+        await message.answer("You have no reminders.")
+        return
+
+    for reminder in items:
+        await message.answer(
+            f"#{reminder['id']} — {reminder['title']}\n"
+            f"Event: {reminder['remind_at']} UTC\n"
+            f"Status: {reminder['status']}",
+            reply_markup=reminder_actions_keyboard(reminder["id"]),
+        )
+
+
+@router.message(Command("reminder"))
+async def reminder_details_handler(
+    message: Message, command: CommandObject, database: aiosqlite.Connection
+) -> None:
+    reminder_id = _command_id(command.args)
+    if reminder_id is None or message.from_user is None:
+        await message.answer("Usage: /reminder <id>")
+        return
+    reminder = await reminders.get_for_user(
+        database, message.from_user.id, reminder_id
+    )
+    if reminder is None:
+        await message.answer("Reminder not found.")
+        return
+    await message.answer(
+        f"#{reminder['id']} — {reminder['title']}\n"
+        f"Event: {reminder['remind_at']} UTC\n"
+        f"Status: {reminder['status']}",
+        reply_markup=reminder_actions_keyboard(reminder["id"]),
+    )
+
+
+@router.message(Command("editreminder"))
+async def edit_reminder_handler(
+    message: Message,
+    command: CommandObject,
+    state: FSMContext,
+    database: aiosqlite.Connection,
+) -> None:
+    reminder_id = _command_id(command.args)
+    if reminder_id is None or message.from_user is None:
+        await message.answer("Usage: /editreminder <id>")
+        return
+    reminder = await reminders.get_for_user(
+        database, message.from_user.id, reminder_id
+    )
+    if reminder is None:
+        await message.answer("Reminder not found.")
+        return
+    await state.set_state(ReminderEditing.title)
+    await state.update_data(reminder_id=reminder_id)
+    await message.answer("Enter the new title, or /cancel to stop:")
+
+
+@router.message(ReminderEditing.title)
+async def edit_title_handler(message: Message, state: FSMContext) -> None:
+    title = (message.text or "").strip()
+    if not title:
+        await message.answer("The title cannot be empty. Enter a title:")
+        return
+    await state.update_data(title=title)
+    await state.set_state(ReminderEditing.date)
+    await message.answer("Enter the new event date (YYYY-MM-DD):")
+
+
+@router.message(ReminderEditing.date)
+async def edit_date_handler(message: Message, state: FSMContext) -> None:
+    date_text = (message.text or "").strip()
+    try:
+        datetime.strptime(date_text, "%Y-%m-%d")
+    except ValueError:
+        await message.answer("Use the date format YYYY-MM-DD:")
+        return
+    await state.update_data(date=date_text)
+    await state.set_state(ReminderEditing.time)
+    await message.answer("Enter the new event time (HH:MM):")
+
+
+@router.message(ReminderEditing.time)
+async def edit_time_handler(
+    message: Message, state: FSMContext, database: aiosqlite.Connection
+) -> None:
+    if message.from_user is None:
+        return
+    data = await state.get_data()
+    user = await users.get_by_telegram_id(database, message.from_user.id)
+    if user is None:
+        await state.clear()
+        await message.answer("Please use /start first.")
+        return
+    try:
+        remind_at = parse_reminder_datetime(
+            data["date"], (message.text or "").strip(), user["timezone"]
+        )
+        updated = await reminders.update_for_user(
+            database,
+            message.from_user.id,
+            data["reminder_id"],
+            data["title"],
+            remind_at,
+        )
+    except (KeyError, ReminderInputError) as error:
+        await message.answer(f"{error}\nEnter the event time (HH:MM):")
+        return
+    await state.clear()
+    await message.answer("Reminder updated." if updated else "Reminder not found.")
+
+
+@router.callback_query(lambda callback: callback.data.startswith("reminder:"))
+async def reminder_action_handler(
+    callback: CallbackQuery, database: aiosqlite.Connection
+) -> None:
+    if callback.from_user is None or callback.message is None:
+        await callback.answer()
+        return
+    parts = callback.data.split(":")
+    if len(parts) != 3:
+        await callback.answer("Invalid action.", show_alert=True)
+        return
+    action, reminder_id_text = parts[1:]
+    try:
+        reminder_id = int(reminder_id_text)
+    except ValueError:
+        await callback.answer("Invalid reminder.", show_alert=True)
+        return
+
+    reminder = await reminders.get_for_user(
+        database, callback.from_user.id, reminder_id
+    )
+    if reminder is None:
+        await callback.answer("Reminder not found.", show_alert=True)
+        return
+    if action == "delete":
+        await callback.message.edit_reply_markup(
+            reply_markup=delete_confirmation_keyboard(reminder_id)
+        )
+    elif action == "delete-confirm":
+        await reminders.delete_for_user(database, callback.from_user.id, reminder_id)
+        await callback.message.edit_text("Reminder deleted.")
+    elif action == "delete-cancel":
+        await callback.message.edit_reply_markup(
+            reply_markup=reminder_actions_keyboard(reminder_id)
+        )
+    elif action == "edit":
+        await callback.answer(
+            "Use /editreminder <id> to edit this reminder.", show_alert=True
+        )
+        return
+    await callback.answer()
+
+
+def _command_id(args: str | None) -> int | None:
+    if not args:
+        return None
+    try:
+        return int(args.strip())
+    except ValueError:
+        return None

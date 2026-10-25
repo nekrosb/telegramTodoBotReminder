@@ -51,3 +51,59 @@ async def list_for_user(
         (telegram_id,),
     )
     return await cursor.fetchall()
+
+
+async def get_for_user(
+    connection: aiosqlite.Connection, telegram_id: int, reminder_id: int
+) -> aiosqlite.Row | None:
+    connection.row_factory = aiosqlite.Row
+    cursor = await connection.execute(
+        """
+        SELECT reminders.*
+        FROM reminders
+        JOIN users ON users.id = reminders.user_id
+        WHERE users.telegram_id = ? AND reminders.id = ?
+        """,
+        (telegram_id, reminder_id),
+    )
+    return await cursor.fetchone()
+
+
+async def update_for_user(
+    connection: aiosqlite.Connection,
+    telegram_id: int,
+    reminder_id: int,
+    title: str,
+    remind_at: datetime,
+) -> bool:
+    if not title.strip():
+        raise ValueError("Reminder title cannot be empty")
+
+    cursor = await connection.execute(
+        """
+        UPDATE reminders
+        SET title = ?, remind_at = ?, updated_at = ?
+        WHERE id = ? AND user_id = (
+            SELECT id FROM users WHERE telegram_id = ?
+        )
+        """,
+        (title, remind_at.astimezone(UTC).isoformat(), _utc_now(), reminder_id, telegram_id),
+    )
+    await connection.commit()
+    return cursor.rowcount == 1
+
+
+async def delete_for_user(
+    connection: aiosqlite.Connection, telegram_id: int, reminder_id: int
+) -> bool:
+    cursor = await connection.execute(
+        """
+        DELETE FROM reminders
+        WHERE id = ? AND user_id = (
+            SELECT id FROM users WHERE telegram_id = ?
+        )
+        """,
+        (reminder_id, telegram_id),
+    )
+    await connection.commit()
+    return cursor.rowcount == 1
