@@ -52,6 +52,12 @@ async def initialize(connection: aiosqlite.Connection) -> None:
         columns = {row[1] for row in await cursor.fetchall()}
         if name not in columns:
             await connection.execute(f"ALTER TABLE reminders ADD COLUMN {column}")
+    cursor = await connection.execute("PRAGMA table_info(users)")
+    user_columns = {row[1] for row in await cursor.fetchall()}
+    if "push_notifications" not in user_columns:
+        await connection.execute(
+            "ALTER TABLE users ADD COLUMN push_notifications INTEGER NOT NULL DEFAULT 1"
+        )
     await connection.execute(
         """
         CREATE TABLE IF NOT EXISTS reminder_notifications (

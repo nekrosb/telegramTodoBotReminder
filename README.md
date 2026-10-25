@@ -7,6 +7,9 @@ Users can also select and update an IANA timezone, with DST-aware local time
 conversion utilities.
 After choosing a language and timezone, use `/newreminder` to start a guided
 reminder creation flow. Use `/cancel` to stop it.
+The main menu provides buttons for creating reminders, viewing reminders, and
+opening settings. Settings include language selection and a global
+push-notification switch.
 Use `/reminders` to list reminders, `/reminder <id>` to view one,
 `/editreminder <id>` to edit one, and the inline delete action to remove one.
 Notifications are persisted in SQLite and restored by APScheduler after restart.

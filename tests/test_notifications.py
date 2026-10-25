@@ -58,3 +58,21 @@ async def test_disabled_notification_is_not_created(database):
         (reminder_id,),
     )
     assert {row[0] for row in await cursor.fetchall()} == {"15m", "3h"}
+
+
+@pytest.mark.asyncio
+async def test_global_push_setting_disables_new_notifications(database):
+    await create_user(database, telegram_id=123, language="en")
+    await database.execute(
+        "UPDATE users SET push_notifications = 0 WHERE telegram_id = 123"
+    )
+    await database.commit()
+
+    reminder_id = await create(
+        database, 123, "Silent event", datetime.now(UTC) + timedelta(days=3)
+    )
+    cursor = await database.execute(
+        "SELECT COUNT(*) FROM reminder_notifications WHERE reminder_id = ?",
+        (reminder_id,),
+    )
+    assert (await cursor.fetchone())[0] == 0

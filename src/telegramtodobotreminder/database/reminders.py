@@ -26,11 +26,13 @@ async def create(
         raise ValueError("Reminder title cannot be empty")
 
     user_cursor = await connection.execute(
-        "SELECT id FROM users WHERE telegram_id = ?", (telegram_id,)
+        "SELECT id, push_notifications FROM users WHERE telegram_id = ?",
+        (telegram_id,),
     )
     user = await user_cursor.fetchone()
     if user is None:
         raise ValueError("Cannot create a reminder for an unregistered user")
+    push_enabled = bool(user[1])
 
     now = _utc_now()
     cursor = await connection.execute(
@@ -46,10 +48,10 @@ async def create(
             remind_at.astimezone(UTC).isoformat(),
             now,
             now,
-            notify_1d,
-            notify_3h,
-            notify_1h,
-            notify_15m,
+            notify_1d and push_enabled,
+            notify_3h and push_enabled,
+            notify_1h and push_enabled,
+            notify_15m and push_enabled,
         ),
     )
     await connection.commit()
@@ -57,7 +59,12 @@ async def create(
         connection,
         cursor.lastrowid,
         remind_at,
-        {"1d": notify_1d, "3h": notify_3h, "1h": notify_1h, "15m": notify_15m},
+        {
+            "1d": notify_1d and push_enabled,
+            "3h": notify_3h and push_enabled,
+            "1h": notify_1h and push_enabled,
+            "15m": notify_15m and push_enabled,
+        },
     )
     return cursor.lastrowid
 

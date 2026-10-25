@@ -139,3 +139,45 @@ async def mark_failed(
         (error[:500], notification_id),
     )
     await connection.commit()
+
+
+async def cancel_pending_for_user(
+    connection: aiosqlite.Connection, telegram_id: int
+) -> None:
+    await connection.execute(
+        """
+        UPDATE reminder_notifications
+        SET status = 'cancelled'
+        WHERE status = 'pending'
+          AND reminder_id IN (
+              SELECT r.id
+              FROM reminders r
+              JOIN users u ON u.id = r.user_id
+              WHERE u.telegram_id = ?
+          )
+        """,
+        (telegram_id,),
+    )
+    await connection.commit()
+
+
+async def resume_for_user(
+    connection: aiosqlite.Connection, telegram_id: int
+) -> None:
+    now = _now().isoformat()
+    await connection.execute(
+        """
+        UPDATE reminder_notifications
+        SET status = 'pending'
+        WHERE status = 'cancelled'
+          AND scheduled_at > ?
+          AND reminder_id IN (
+              SELECT r.id
+              FROM reminders r
+              JOIN users u ON u.id = r.user_id
+              WHERE u.telegram_id = ?
+          )
+        """,
+        (now, telegram_id),
+    )
+    await connection.commit()

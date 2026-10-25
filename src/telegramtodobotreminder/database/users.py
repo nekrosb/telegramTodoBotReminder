@@ -57,3 +57,17 @@ async def update_timezone(
         (timezone, _utc_now(), telegram_id),
     )
     await connection.commit()
+
+
+async def update_push_notifications(
+    connection: aiosqlite.Connection, telegram_id: int, enabled: bool
+) -> None:
+    await connection.execute(
+        """
+        UPDATE users
+        SET push_notifications = ?, updated_at = ?
+        WHERE telegram_id = ?
+        """,
+        (enabled, _utc_now(), telegram_id),
+    )
+    await connection.commit()

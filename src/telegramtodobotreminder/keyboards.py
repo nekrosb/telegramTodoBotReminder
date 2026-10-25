@@ -87,6 +87,40 @@ def cancel_keyboard(language: str) -> ReplyKeyboardMarkup:
     )
 
 
+def settings_keyboard(language: str, push_enabled: bool) -> InlineKeyboardMarkup:
+    push_label = (
+        "Disable notifications" if push_enabled else "Enable notifications"
+    ) if language == "en" else (
+        "Отключить уведомления" if push_enabled else "Включить уведомления"
+    )
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Русский", callback_data="settings:language:ru"
+                ),
+                InlineKeyboardButton(
+                    text="English", callback_data="settings:language:en"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=push_label,
+                    callback_data=f"settings:push:{'off' if push_enabled else 'on'}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Change timezone"
+                    if language == "en"
+                    else "Изменить часовой пояс",
+                    callback_data="settings:timezone",
+                )
+            ],
+        ]
+    )
+
+
 def date_picker_keyboard(year: int, month: int, language: str) -> InlineKeyboardMarkup:
     month_name = calendar.month_name[month]
     weekdays = ("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")

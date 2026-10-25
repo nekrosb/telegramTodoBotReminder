@@ -43,3 +43,14 @@ async def test_user_timezone_can_be_updated(database):
 
     user = await get_by_telegram_id(database, telegram_id=123)
     assert user["timezone"] == "Europe/Berlin"
+
+
+@pytest.mark.asyncio
+async def test_user_push_notifications_can_be_updated(database):
+    from telegramtodobotreminder.database.users import update_push_notifications
+
+    await create(database, telegram_id=123, language="en")
+    await update_push_notifications(database, telegram_id=123, enabled=False)
+
+    user = await get_by_telegram_id(database, telegram_id=123)
+    assert user["push_notifications"] == 0

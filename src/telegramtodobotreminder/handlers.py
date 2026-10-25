@@ -7,12 +7,14 @@ from aiogram import F
 from aiogram.types import CallbackQuery, Message
 
 from telegramtodobotreminder.database import reminders, users
+from telegramtodobotreminder.database import notifications
 from telegramtodobotreminder.keyboards import (
     delete_confirmation_keyboard,
     cancel_keyboard,
     date_picker_keyboard,
     language_keyboard,
     main_menu_keyboard,
+    settings_keyboard,
     reminder_actions_keyboard,
     timezone_keyboard,
 )
@@ -87,9 +89,67 @@ async def language_handler(
         else "Язык сохранён. Теперь выберите часовой пояс:",
         reply_markup=timezone_keyboard(),
     )
+    await callback.answer()
+
+
+@router.callback_query(lambda callback: callback.data == "settings:timezone")
+async def settings_timezone_handler(
+    callback: CallbackQuery, database: aiosqlite.Connection
+) -> None:
+    if callback.from_user is None or callback.message is None:
+        await callback.answer()
+        return
+    user = await users.get_by_telegram_id(database, callback.from_user.id)
+    language = user["language"] if user else "en"
+    await callback.message.answer(
+        "Choose your timezone:" if language == "en" else "Выберите часовой пояс:",
+        reply_markup=timezone_keyboard(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(lambda callback: callback.data.startswith("settings:language:"))
+async def settings_language_handler(
+    callback: CallbackQuery, database: aiosqlite.Connection
+) -> None:
+    if callback.from_user is None or callback.message is None:
+        await callback.answer()
+        return
+    language = callback.data.rsplit(":", maxsplit=1)[1]
+    await users.update_language(database, callback.from_user.id, language)
+    await callback.message.edit_text(
+        "Language updated." if language == "en" else "Язык обновлён."
+    )
     await callback.message.answer(
         "Choose an action:" if language == "en" else "Выберите действие:",
         reply_markup=main_menu_keyboard(language),
+    )
+    await callback.answer()
+
+
+@router.callback_query(lambda callback: callback.data.startswith("settings:push:"))
+async def settings_push_handler(
+    callback: CallbackQuery,
+    database: aiosqlite.Connection,
+    reminder_scheduler: ReminderScheduler,
+) -> None:
+    if callback.from_user is None or callback.message is None:
+        await callback.answer()
+        return
+    enabled = callback.data.endswith(":on")
+    await users.update_push_notifications(database, callback.from_user.id, enabled)
+    if not enabled:
+        await notifications.cancel_pending_for_user(database, callback.from_user.id)
+    else:
+        await notifications.resume_for_user(database, callback.from_user.id)
+        await reminder_scheduler.restore()
+    user = await users.get_by_telegram_id(database, callback.from_user.id)
+    language = user["language"] if user else "en"
+    await callback.message.edit_text(
+        "Notification settings updated."
+        if language == "en"
+        else "Настройки уведомлений обновлены.",
+        reply_markup=settings_keyboard(language, enabled),
     )
     await callback.answer()
 
@@ -143,6 +203,23 @@ async def list_reminders_button_handler(
     message: Message, database: aiosqlite.Connection
 ) -> None:
     await reminders_list_handler(message, database)
+
+
+@router.message(F.text.in_({"Settings", "Настройки"}))
+async def settings_button_handler(
+    message: Message, database: aiosqlite.Connection
+) -> None:
+    if message.from_user is None:
+        return
+    user = await users.get_by_telegram_id(database, message.from_user.id)
+    if user is None:
+        await message.answer("Please use /start first.")
+        return
+    language = user["language"]
+    await message.answer(
+        "Settings:" if language == "en" else "Настройки:",
+        reply_markup=settings_keyboard(language, bool(user["push_notifications"])),
+    )
 
 
 @router.message(Command("newreminder"))
