@@ -41,4 +41,35 @@ async def initialize(connection: aiosqlite.Connection) -> None:
         )
         """
     )
+    for column in (
+        "notify_3h INTEGER NOT NULL DEFAULT 1",
+        "notify_1h INTEGER NOT NULL DEFAULT 1",
+        "notify_15m INTEGER NOT NULL DEFAULT 1",
+        "notify_1d INTEGER NOT NULL DEFAULT 1",
+    ):
+        name = column.split()[0]
+        cursor = await connection.execute("PRAGMA table_info(reminders)")
+        columns = {row[1] for row in await cursor.fetchall()}
+        if name not in columns:
+            await connection.execute(f"ALTER TABLE reminders ADD COLUMN {column}")
+    await connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS reminder_notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reminder_id INTEGER NOT NULL REFERENCES reminders(id) ON DELETE CASCADE,
+            notification_type TEXT NOT NULL CHECK (
+                notification_type IN ('1d', '3h', '1h', '15m')
+            ),
+            scheduled_at TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (
+                status IN ('pending', 'processing', 'sent', 'failed', 'cancelled')
+            ),
+            sent_at TEXT,
+            attempt_count INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT,
+            created_at TEXT NOT NULL,
+            UNIQUE (reminder_id, notification_type)
+        )
+        """
+    )
     await connection.commit()

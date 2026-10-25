@@ -7,6 +7,7 @@ from aiogram import Bot, Dispatcher
 from telegramtodobotreminder.config import ConfigurationError, load_settings
 from telegramtodobotreminder.database.connection import connect, initialize
 from telegramtodobotreminder.handlers import router
+from telegramtodobotreminder.scheduler import ReminderScheduler
 
 
 logger = logging.getLogger(__name__)
@@ -27,11 +28,17 @@ async def run() -> None:
     dispatcher.include_router(router)
     database = await connect(DATABASE_PATH)
     await initialize(database)
+    reminder_scheduler = ReminderScheduler(bot, database)
+    await reminder_scheduler.restore()
+    reminder_scheduler.start()
 
     try:
         logger.info("Starting Telegram bot")
-        await dispatcher.start_polling(bot, database=database)
+        await dispatcher.start_polling(
+            bot, database=database, reminder_scheduler=reminder_scheduler
+        )
     finally:
+        await reminder_scheduler.shutdown()
         await database.close()
         await bot.session.close()
         logger.info("Telegram bot stopped")

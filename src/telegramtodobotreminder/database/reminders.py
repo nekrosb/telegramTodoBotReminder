@@ -2,6 +2,8 @@ from datetime import UTC, datetime
 
 import aiosqlite
 
+from telegramtodobotreminder.database.notifications import create_for_reminder
+
 
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat()
@@ -12,6 +14,10 @@ async def create(
     telegram_id: int,
     title: str,
     remind_at: datetime,
+    notify_1d: bool = True,
+    notify_3h: bool = True,
+    notify_1h: bool = True,
+    notify_15m: bool = True,
 ) -> int:
     if not title.strip():
         raise ValueError("Reminder title cannot be empty")
@@ -27,12 +33,29 @@ async def create(
     cursor = await connection.execute(
         """
         INSERT INTO reminders
-            (user_id, title, remind_at, status, created_at, updated_at)
-        VALUES (?, ?, ?, 'scheduled', ?, ?)
+            (user_id, title, remind_at, status, created_at, updated_at,
+             notify_1d, notify_3h, notify_1h, notify_15m)
+        VALUES (?, ?, ?, 'scheduled', ?, ?, ?, ?, ?, ?)
         """,
-        (user[0], title, remind_at.astimezone(UTC).isoformat(), now, now),
+        (
+            user[0],
+            title,
+            remind_at.astimezone(UTC).isoformat(),
+            now,
+            now,
+            notify_1d,
+            notify_3h,
+            notify_1h,
+            notify_15m,
+        ),
     )
     await connection.commit()
+    await create_for_reminder(
+        connection,
+        cursor.lastrowid,
+        remind_at,
+        {"1d": notify_1d, "3h": notify_3h, "1h": notify_1h, "15m": notify_15m},
+    )
     return cursor.lastrowid
 
 

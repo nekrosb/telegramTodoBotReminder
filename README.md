@@ -9,6 +9,10 @@ The `/newreminder` command starts a guided reminder creation flow, and
 `/cancel` can be used to stop it.
 Use `/reminders` to list reminders, `/reminder <id>` to view one,
 `/editreminder <id>` to edit one, and the inline delete action to remove one.
+Notifications are persisted in SQLite and restored by APScheduler after restart.
+The available notification offsets are one day, three hours, one hour, and
+fifteen minutes. The one-day notification is scheduled only when the event is
+more than two days away.
 
 ## Running locally
 
@@ -56,3 +60,8 @@ uv run --with pytest --with pytest-asyncio pytest -q
 
 The SQLite database is stored in `data/bot.sqlite3` and is created
 automatically when the application starts.
+
+Notifications are persisted in SQLite and restored by APScheduler after
+restart. Available offsets are one day, three hours, one hour, and fifteen
+minutes. The one-day notification is scheduled only when the event is more
+than two days away.

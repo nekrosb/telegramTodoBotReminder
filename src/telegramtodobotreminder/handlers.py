@@ -14,6 +14,7 @@ from telegramtodobotreminder.keyboards import (
 )
 from telegramtodobotreminder.reminder_flow import ReminderInputError, parse_reminder_datetime
 from telegramtodobotreminder.states import ReminderCreation, ReminderEditing
+from telegramtodobotreminder.scheduler import ReminderScheduler
 from telegramtodobotreminder.timezones import get_timezone
 
 
@@ -162,7 +163,10 @@ async def reminder_date_handler(message: Message, state: FSMContext) -> None:
 
 @router.message(ReminderCreation.time)
 async def reminder_time_handler(
-    message: Message, state: FSMContext, database: aiosqlite.Connection
+    message: Message,
+    state: FSMContext,
+    database: aiosqlite.Connection,
+    reminder_scheduler: ReminderScheduler,
 ) -> None:
     if message.from_user is None:
         return
@@ -184,6 +188,7 @@ async def reminder_time_handler(
     reminder_id = await reminders.create(
         database, message.from_user.id, data["title"], remind_at
     )
+    await reminder_scheduler.restore()
     await state.clear()
     await message.answer(
         f"Reminder #{reminder_id} created for {remind_at.isoformat()} UTC."
