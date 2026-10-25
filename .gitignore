@@ -5,6 +5,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 data/
+PROJECT_SUMMARY_RU.txt
 dist/
 build/
 *.egg-info/
