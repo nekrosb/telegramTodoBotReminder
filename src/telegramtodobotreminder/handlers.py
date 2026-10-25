@@ -18,7 +18,11 @@ from telegramtodobotreminder.keyboards import (
     reminder_actions_keyboard,
     timezone_keyboard,
 )
-from telegramtodobotreminder.reminder_flow import ReminderInputError, parse_reminder_datetime
+from telegramtodobotreminder.reminder_flow import (
+    ReminderInputError,
+    parse_reminder_datetime,
+    validate_reminder_date,
+)
 from telegramtodobotreminder.states import ReminderCreation, ReminderEditing
 from telegramtodobotreminder.scheduler import ReminderScheduler
 from telegramtodobotreminder.timezones import get_timezone
@@ -234,6 +238,7 @@ async def new_reminder_handler(
         return
 
     await state.set_state(ReminderCreation.title)
+    await state.update_data(language=user["language"], timezone=user["timezone"])
     user_language = user["language"]
     await message.answer(
         "Enter a reminder title:" if user_language == "en" else "Введите название напоминания:",
@@ -247,16 +252,27 @@ async def cancel_handler(message: Message, state: FSMContext) -> None:
     if current_state is None:
         await message.answer("There is no active operation.")
         return
+    data = await state.get_data()
+    language = data.get("language", "en")
     await state.clear()
-    await message.answer("Reminder creation cancelled.", reply_markup=main_menu_keyboard("en"))
+    await message.answer(
+        "Reminder creation cancelled."
+        if language == "en"
+        else "Создание напоминания отменено.",
+        reply_markup=main_menu_keyboard(language),
+    )
 
 
 @router.message(F.text.in_({"Cancel", "Отмена"}))
 async def cancel_button_handler(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    language = data.get("language", "en")
     await state.clear()
     await message.answer(
-        "Reminder creation cancelled.",
-        reply_markup=main_menu_keyboard("en"),
+        "Reminder creation cancelled."
+        if language == "en"
+        else "Создание напоминания отменено.",
+        reply_markup=main_menu_keyboard(language),
     )
 
 
@@ -270,7 +286,9 @@ async def reminder_title_handler(message: Message, state: FSMContext) -> None:
     await state.set_state(ReminderCreation.date)
     await message.answer(
         "Choose the event date or enter it manually (YYYY-MM-DD):",
-        reply_markup=date_picker_keyboard(date.today().year, date.today().month, "en"),
+        reply_markup=date_picker_keyboard(
+            date.today().year, date.today().month, "en"
+        ),
     )
 
 
@@ -282,12 +300,15 @@ async def manual_date_handler(callback: CallbackQuery, state: FSMContext) -> Non
 
 
 @router.callback_query(lambda callback: callback.data.startswith("calendar:date:"))
-async def calendar_date_handler(callback: CallbackQuery, state: FSMContext) -> None:
+async def calendar_date_handler(
+    callback: CallbackQuery, state: FSMContext, database: aiosqlite.Connection
+) -> None:
     selected_date = callback.data.removeprefix("calendar:date:")
+    data = await state.get_data()
     try:
-        datetime.strptime(selected_date, "%Y-%m-%d")
-    except ValueError:
-        await callback.answer("Invalid date.", show_alert=True)
+        validate_reminder_date(selected_date, data.get("timezone", "UTC"))
+    except ReminderInputError as error:
+        await callback.answer(str(error), show_alert=True)
         return
     await state.update_data(date=selected_date)
     await state.set_state(ReminderCreation.time)
@@ -305,10 +326,11 @@ async def calendar_ignore_handler(callback: CallbackQuery) -> None:
 @router.message(ReminderCreation.date)
 async def reminder_date_handler(message: Message, state: FSMContext) -> None:
     date_text = (message.text or "").strip()
+    data = await state.get_data()
     try:
-        datetime.strptime(date_text, "%Y-%m-%d")
-    except ValueError:
-        await message.answer("Use the date format YYYY-MM-DD:")
+        validate_reminder_date(date_text, data.get("timezone", "UTC"))
+    except ReminderInputError as error:
+        await message.answer(str(error))
         return
     await state.update_data(date=date_text)
     await state.set_state(ReminderCreation.time)
@@ -425,12 +447,18 @@ async def edit_title_handler(message: Message, state: FSMContext) -> None:
 
 
 @router.message(ReminderEditing.date)
-async def edit_date_handler(message: Message, state: FSMContext) -> None:
+async def edit_date_handler(
+    message: Message, state: FSMContext, database: aiosqlite.Connection
+) -> None:
     date_text = (message.text or "").strip()
+    if message.from_user is None:
+        return
+    user = await users.get_by_telegram_id(database, message.from_user.id)
+    timezone = user["timezone"] if user else "UTC"
     try:
-        datetime.strptime(date_text, "%Y-%m-%d")
-    except ValueError:
-        await message.answer("Use the date format YYYY-MM-DD:")
+        validate_reminder_date(date_text, timezone)
+    except ReminderInputError as error:
+        await message.answer(str(error))
         return
     await state.update_data(date=date_text)
     await state.set_state(ReminderEditing.time)

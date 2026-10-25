@@ -5,6 +5,7 @@ import pytest
 from telegramtodobotreminder.reminder_flow import (
     ReminderInputError,
     parse_reminder_datetime,
+    validate_reminder_date,
 )
 
 
@@ -39,6 +40,15 @@ def test_past_reminder_is_rejected():
             "2026-10-25",
             "11:00",
             "UTC",
+            now=datetime(2026, 10, 25, 12, 0, tzinfo=UTC),
+        )
+
+
+def test_past_date_is_rejected_before_time_step():
+    with pytest.raises(ReminderInputError, match="must not be in the past"):
+        validate_reminder_date(
+            "2026-10-24",
+            "Europe/Berlin",
             now=datetime(2026, 10, 25, 12, 0, tzinfo=UTC),
         )
 
