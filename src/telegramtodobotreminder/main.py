@@ -1,13 +1,16 @@
 import asyncio
 import logging
+from pathlib import Path
 
 from aiogram import Bot, Dispatcher
 
 from telegramtodobotreminder.config import ConfigurationError, load_settings
+from telegramtodobotreminder.database.connection import connect, initialize
 from telegramtodobotreminder.handlers import router
 
 
 logger = logging.getLogger(__name__)
+DATABASE_PATH = Path("data") / "bot.sqlite3"
 
 
 def configure_logging() -> None:
@@ -22,11 +25,14 @@ async def run() -> None:
     bot = Bot(token=settings.bot_token)
     dispatcher = Dispatcher()
     dispatcher.include_router(router)
+    database = await connect(DATABASE_PATH)
+    await initialize(database)
 
     try:
         logger.info("Starting Telegram bot")
-        await dispatcher.start_polling(bot)
+        await dispatcher.start_polling(bot, database=database)
     finally:
+        await database.close()
         await bot.session.close()
         logger.info("Telegram bot stopped")
 
