@@ -35,31 +35,44 @@ def timezone_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def reminder_actions_keyboard(reminder_id: int) -> InlineKeyboardMarkup:
+def reminder_actions_keyboard(
+    reminder_id: int, language: str = "en"
+) -> InlineKeyboardMarkup:
+    edit_label, delete_label = (
+        ("Edit", "Delete") if language == "en" else ("Изменить", "Удалить")
+    )
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Edit", callback_data=f"reminder:edit:{reminder_id}"
+                    text=edit_label, callback_data=f"reminder:edit:{reminder_id}"
                 ),
                 InlineKeyboardButton(
-                    text="Delete", callback_data=f"reminder:delete:{reminder_id}"
+                    text=delete_label, callback_data=f"reminder:delete:{reminder_id}"
                 ),
             ]
         ]
     )
 
 
-def delete_confirmation_keyboard(reminder_id: int) -> InlineKeyboardMarkup:
+def delete_confirmation_keyboard(
+    reminder_id: int, language: str = "en"
+) -> InlineKeyboardMarkup:
+    confirm_label, cancel_label = (
+        ("Confirm deletion", "Cancel")
+        if language == "en"
+        else ("Подтвердить удаление", "Отмена")
+    )
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Confirm deletion",
+                    text=confirm_label,
                     callback_data=f"reminder:delete-confirm:{reminder_id}",
                 ),
                 InlineKeyboardButton(
-                    text="Cancel", callback_data=f"reminder:delete-cancel:{reminder_id}"
+                    text=cancel_label,
+                    callback_data=f"reminder:delete-cancel:{reminder_id}"
                 ),
             ]
         ]
@@ -123,7 +136,14 @@ def settings_keyboard(language: str, push_enabled: bool) -> InlineKeyboardMarkup
 
 def date_picker_keyboard(year: int, month: int, language: str) -> InlineKeyboardMarkup:
     month_name = calendar.month_name[month]
-    weekdays = ("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
+    if language == "ru":
+        weekdays = ("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
+        month_name = (
+            "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+            "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+        )[month - 1]
+    else:
+        weekdays = ("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
     rows = [[InlineKeyboardButton(text=day, callback_data="calendar:ignore") for day in weekdays]]
     for week in calendar.monthcalendar(year, month):
         rows.append(

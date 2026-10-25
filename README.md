@@ -5,8 +5,11 @@ configuration loading, the `/start` command, basic logging, user registration,
 language selection, and SQLite persistence.
 Users can also select and update an IANA timezone, with DST-aware local time
 conversion utilities.
-After choosing a language and timezone, use `/newreminder` to start a guided
-reminder creation flow. Use `/cancel` to stop it.
+After choosing a language and timezone, use the main menu buttons to create or
+view reminders. The date picker also supports manual date entry. During
+creation, use the `Cancel` / `Отмена` button to return to the main menu.
+The text commands remain available as a fallback:
+`/newreminder`, `/reminders`, `/reminder <id>`, and `/cancel`.
 The main menu provides buttons for creating reminders, viewing reminders, and
 opening settings. Settings include language selection and a global
 push-notification switch.

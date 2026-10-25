@@ -26,6 +26,7 @@ from telegramtodobotreminder.reminder_flow import (
 from telegramtodobotreminder.states import ReminderCreation, ReminderEditing
 from telegramtodobotreminder.scheduler import ReminderScheduler
 from telegramtodobotreminder.timezones import get_timezone
+from telegramtodobotreminder.timezones import utc_to_local
 
 
 router = Router(name=__name__)
@@ -283,19 +284,29 @@ async def reminder_title_handler(message: Message, state: FSMContext) -> None:
         await message.answer("The title cannot be empty. Enter a title:")
         return
     await state.update_data(title=title)
+    data = await state.get_data()
+    language = data.get("language", "en")
     await state.set_state(ReminderCreation.date)
     await message.answer(
-        "Choose the event date or enter it manually (YYYY-MM-DD):",
+        "Choose the event date or enter it manually (YYYY-MM-DD):"
+        if language == "en"
+        else "Выберите дату события или введите её вручную (ГГГГ-ММ-ДД):",
         reply_markup=date_picker_keyboard(
-            date.today().year, date.today().month, "en"
+            date.today().year, date.today().month, language
         ),
     )
 
 
 @router.callback_query(lambda callback: callback.data == "calendar:manual")
 async def manual_date_handler(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    language = data.get("language", "en")
     await state.set_state(ReminderCreation.date)
-    await callback.message.answer("Enter the event date (YYYY-MM-DD):")
+    await callback.message.answer(
+        "Enter the event date (YYYY-MM-DD):"
+        if language == "en"
+        else "Введите дату события (ГГГГ-ММ-ДД):"
+    )
     await callback.answer()
 
 
@@ -314,12 +325,34 @@ async def calendar_date_handler(
     await state.set_state(ReminderCreation.time)
     await callback.message.edit_text(
         f"Selected date: {selected_date}\nEnter the event time (HH:MM):"
+        if data.get("language", "en") == "en"
+        else f"Выбрана дата: {selected_date}\nВведите время события (ЧЧ:ММ):"
     )
     await callback.answer()
 
 
 @router.callback_query(lambda callback: callback.data == "calendar:ignore")
 async def calendar_ignore_handler(callback: CallbackQuery) -> None:
+    await callback.answer()
+
+
+@router.callback_query(lambda callback: callback.data == "creation:cancel")
+async def calendar_cancel_handler(
+    callback: CallbackQuery, state: FSMContext
+) -> None:
+    data = await state.get_data()
+    language = data.get("language", "en")
+    await state.clear()
+    if callback.message is not None:
+        await callback.message.edit_text(
+            "Reminder creation cancelled."
+            if language == "en"
+            else "Создание напоминания отменено."
+        )
+        await callback.message.answer(
+            "Choose an action:" if language == "en" else "Выберите действие:",
+            reply_markup=main_menu_keyboard(language),
+        )
     await callback.answer()
 
 
@@ -334,7 +367,11 @@ async def reminder_date_handler(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(date=date_text)
     await state.set_state(ReminderCreation.time)
-    await message.answer("Enter the event time (HH:MM):")
+    await message.answer(
+        "Enter the event time (HH:MM):"
+        if data.get("language", "en") == "en"
+        else "Введите время события (ЧЧ:ММ):"
+    )
 
 
 @router.message(ReminderCreation.time)
@@ -366,8 +403,16 @@ async def reminder_time_handler(
     )
     await reminder_scheduler.restore()
     await state.clear()
+    language = user["language"]
     await message.answer(
-        f"Reminder #{reminder_id} created for {remind_at.isoformat()} UTC."
+        (
+            f"Reminder #{reminder_id} created for "
+            f"{_format_local_event(remind_at, user['timezone'])}."
+            if language == "en"
+            else f"Напоминание №{reminder_id} создано на "
+            f"{_format_local_event(remind_at, user['timezone'])}."
+        ),
+        reply_markup=main_menu_keyboard(language),
     )
 
 
@@ -378,6 +423,8 @@ async def reminders_list_handler(
     if message.from_user is None:
         return
     items = await reminders.list_for_user(database, message.from_user.id)
+    user = await users.get_by_telegram_id(database, message.from_user.id)
+    language = user["language"] if user else "en"
     if not items:
         await message.answer("You have no reminders.")
         return
@@ -385,9 +432,10 @@ async def reminders_list_handler(
     for reminder in items:
         await message.answer(
             f"#{reminder['id']} — {reminder['title']}\n"
-            f"Event: {reminder['remind_at']} UTC\n"
-            f"Status: {reminder['status']}",
-            reply_markup=reminder_actions_keyboard(reminder["id"]),
+            f"{'Event' if language == 'en' else 'Событие'}: "
+            f"{_format_local_event(reminder['remind_at'], user['timezone'])}\n"
+            f"{'Status' if language == 'en' else 'Статус'}: {reminder['status']}",
+            reply_markup=reminder_actions_keyboard(reminder["id"], language),
         )
 
 
@@ -405,11 +453,16 @@ async def reminder_details_handler(
     if reminder is None:
         await message.answer("Reminder not found.")
         return
+    user = await users.get_by_telegram_id(database, message.from_user.id)
+    if user is None:
+        await message.answer("Please use /start first.")
+        return
     await message.answer(
         f"#{reminder['id']} — {reminder['title']}\n"
-        f"Event: {reminder['remind_at']} UTC\n"
-        f"Status: {reminder['status']}",
-        reply_markup=reminder_actions_keyboard(reminder["id"]),
+        f"{'Event' if user['language'] == 'en' else 'Событие'}: "
+        f"{_format_local_event(reminder['remind_at'], user['timezone'])}\n"
+        f"{'Status' if user['language'] == 'en' else 'Статус'}: {reminder['status']}",
+        reply_markup=reminder_actions_keyboard(reminder["id"], user["language"]),
     )
 
 
@@ -524,16 +577,18 @@ async def reminder_action_handler(
     if reminder is None:
         await callback.answer("Reminder not found.", show_alert=True)
         return
+    user = await users.get_by_telegram_id(database, callback.from_user.id)
+    language = user["language"] if user else "en"
     if action == "delete":
         await callback.message.edit_reply_markup(
-            reply_markup=delete_confirmation_keyboard(reminder_id)
+            reply_markup=delete_confirmation_keyboard(reminder_id, language)
         )
     elif action == "delete-confirm":
         await reminders.delete_for_user(database, callback.from_user.id, reminder_id)
         await callback.message.edit_text("Reminder deleted.")
     elif action == "delete-cancel":
         await callback.message.edit_reply_markup(
-            reply_markup=reminder_actions_keyboard(reminder_id)
+            reply_markup=reminder_actions_keyboard(reminder_id, language)
         )
     elif action == "edit":
         await callback.answer(
@@ -550,3 +605,8 @@ def _command_id(args: str | None) -> int | None:
         return int(args.strip())
     except ValueError:
         return None
+
+
+def _format_local_event(value: str, timezone: str) -> str:
+    local_value = utc_to_local(datetime.fromisoformat(value), timezone)
+    return f"{local_value:%d.%m.%Y %H:%M} ({timezone})"
