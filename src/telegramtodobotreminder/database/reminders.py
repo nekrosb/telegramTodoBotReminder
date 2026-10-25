@@ -2,7 +2,10 @@ from datetime import UTC, datetime
 
 import aiosqlite
 
-from telegramtodobotreminder.database.notifications import create_for_reminder
+from telegramtodobotreminder.database.notifications import (
+    create_for_reminder,
+    rebuild_for_reminder,
+)
 
 
 def _utc_now() -> str:
@@ -113,7 +116,10 @@ async def update_for_user(
         (title, remind_at.astimezone(UTC).isoformat(), _utc_now(), reminder_id, telegram_id),
     )
     await connection.commit()
-    return cursor.rowcount == 1
+    updated = cursor.rowcount == 1
+    if updated:
+        await rebuild_for_reminder(connection, reminder_id, remind_at)
+    return updated
 
 
 async def delete_for_user(

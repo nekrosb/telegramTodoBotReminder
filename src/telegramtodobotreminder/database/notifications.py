@@ -38,6 +38,42 @@ async def create_for_reminder(
     await connection.commit()
 
 
+async def rebuild_for_reminder(
+    connection: aiosqlite.Connection, reminder_id: int, remind_at: datetime
+) -> None:
+    await connection.execute(
+        """
+        DELETE FROM reminder_notifications
+        WHERE reminder_id = ? AND status = 'pending'
+        """,
+        (reminder_id,),
+    )
+    cursor = await connection.execute(
+        """
+        SELECT notify_1d, notify_3h, notify_1h, notify_15m
+        FROM reminders
+        WHERE id = ?
+        """,
+        (reminder_id,),
+    )
+    options = await cursor.fetchone()
+    if options is None:
+        await connection.commit()
+        return
+    await connection.commit()
+    await create_for_reminder(
+        connection,
+        reminder_id,
+        remind_at,
+        {
+            "1d": bool(options[0]),
+            "3h": bool(options[1]),
+            "1h": bool(options[2]),
+            "15m": bool(options[3]),
+        },
+    )
+
+
 async def pending_future(
     connection: aiosqlite.Connection,
 ) -> list[aiosqlite.Row]:

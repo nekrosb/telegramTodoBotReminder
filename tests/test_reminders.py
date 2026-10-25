@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -74,3 +74,24 @@ async def test_owner_can_update_and_delete_reminder(database):
     assert (await get_for_user(database, 123, reminder_id))["title"] == "Updated"
     assert await delete_for_user(database, 123, reminder_id)
     assert await get_for_user(database, 123, reminder_id) is None
+
+
+@pytest.mark.asyncio
+async def test_updating_reminder_rebuilds_pending_notifications(database):
+    await create_user(database, telegram_id=123, language="en")
+    old_event = datetime.now(UTC) + timedelta(days=3)
+    reminder_id = await create(database, 123, "Original", old_event)
+
+    new_event = datetime.now(UTC) + timedelta(days=4)
+    assert await update_for_user(database, 123, reminder_id, "Updated", new_event)
+
+    cursor = await database.execute(
+        """
+        SELECT scheduled_at
+        FROM reminder_notifications
+        WHERE reminder_id = ? AND notification_type = '3h'
+        """,
+        (reminder_id,),
+    )
+    scheduled_at = datetime.fromisoformat((await cursor.fetchone())[0])
+    assert scheduled_at == new_event - timedelta(hours=3)

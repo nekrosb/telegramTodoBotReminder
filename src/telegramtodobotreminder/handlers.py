@@ -35,9 +35,11 @@ async def start_handler(message: Message, database: aiosqlite.Connection) -> Non
         return
 
     greeting = (
-        "Welcome back! Reminder management will be available soon."
+        "Welcome back! Use /newreminder to create a reminder, "
+        "or /reminders to view your reminders."
         if user["language"] == "en"
-        else "С возвращением! Управление напоминаниями скоро будет доступно."
+        else "С возвращением! Используйте /newreminder для создания "
+        "напоминания или /reminders для просмотра списка."
     )
     await message.answer(greeting)
 
@@ -104,10 +106,12 @@ async def timezone_handler(
     await users.update_timezone(database, callback.from_user.id, timezone)
     language = user["language"]
     await callback.message.edit_text(
-        f"Timezone saved: {timezone}. Reminder management will be available soon."
+        f"Timezone saved: {timezone}.\n"
+        "Use /newreminder to create a reminder or /reminders to view your list."
         if language == "en"
-        else f"Часовой пояс сохранён: {timezone}. "
-        "Управление напоминаниями скоро будет доступно."
+        else f"Часовой пояс сохранён: {timezone}.\n"
+        "Используйте /newreminder для создания напоминания "
+        "или /reminders для просмотра списка."
     )
     await callback.answer()
 
@@ -285,7 +289,10 @@ async def edit_date_handler(message: Message, state: FSMContext) -> None:
 
 @router.message(ReminderEditing.time)
 async def edit_time_handler(
-    message: Message, state: FSMContext, database: aiosqlite.Connection
+    message: Message,
+    state: FSMContext,
+    database: aiosqlite.Connection,
+    reminder_scheduler: ReminderScheduler,
 ) -> None:
     if message.from_user is None:
         return
@@ -310,6 +317,8 @@ async def edit_time_handler(
         await message.answer(f"{error}\nEnter the event time (HH:MM):")
         return
     await state.clear()
+    if updated:
+        await reminder_scheduler.restore()
     await message.answer("Reminder updated." if updated else "Reminder not found.")
 
 
