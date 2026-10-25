@@ -3,6 +3,8 @@
 A Telegram bot for managing reminders. The project currently includes
 configuration loading, the `/start` command, basic logging, user registration,
 language selection, and SQLite persistence.
+Users can also select and update an IANA timezone, with DST-aware local time
+conversion utilities.
 
 ## Running locally
 

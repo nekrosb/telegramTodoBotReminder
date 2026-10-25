@@ -1,10 +1,11 @@
 import aiosqlite
 from aiogram import Router
-from aiogram.filters import CommandStart
+from aiogram.filters import Command, CommandStart
 from aiogram.types import CallbackQuery, Message
 
 from telegramtodobotreminder.database import users
-from telegramtodobotreminder.keyboards import language_keyboard
+from telegramtodobotreminder.keyboards import language_keyboard, timezone_keyboard
+from telegramtodobotreminder.timezones import get_timezone
 
 
 router = Router(name=__name__)
@@ -31,6 +32,21 @@ async def start_handler(message: Message, database: aiosqlite.Connection) -> Non
     await message.answer(greeting)
 
 
+@router.message(Command("timezone"))
+async def timezone_command_handler(
+    message: Message, database: aiosqlite.Connection
+) -> None:
+    if message.from_user is None:
+        return
+
+    user = await users.get_by_telegram_id(database, message.from_user.id)
+    language = user["language"] if user is not None else "en"
+    prompt = (
+        "Choose your timezone:" if language == "en" else "Выберите часовой пояс:"
+    )
+    await message.answer(prompt, reply_markup=timezone_keyboard())
+
+
 @router.callback_query(lambda callback: callback.data in {"language:ru", "language:en"})
 async def language_handler(
     callback: CallbackQuery, database: aiosqlite.Connection
@@ -47,8 +63,40 @@ async def language_handler(
         await users.update_language(database, callback.from_user.id, language)
 
     await callback.message.edit_text(
-        "Language saved. Reminder management will be available soon."
+        "Language saved. Now choose your timezone:"
         if language == "en"
-        else "Язык сохранён. Управление напоминаниями скоро будет доступно."
+        else "Язык сохранён. Теперь выберите часовой пояс:",
+        reply_markup=timezone_keyboard(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(lambda callback: callback.data.startswith("timezone:"))
+async def timezone_handler(
+    callback: CallbackQuery, database: aiosqlite.Connection
+) -> None:
+    if callback.from_user is None or callback.message is None:
+        await callback.answer()
+        return
+
+    timezone = callback.data.removeprefix("timezone:")
+    try:
+        get_timezone(timezone)
+    except ValueError:
+        await callback.answer("Invalid timezone.", show_alert=True)
+        return
+
+    user = await users.get_by_telegram_id(database, callback.from_user.id)
+    if user is None:
+        await callback.answer("Please use /start first.", show_alert=True)
+        return
+
+    await users.update_timezone(database, callback.from_user.id, timezone)
+    language = user["language"]
+    await callback.message.edit_text(
+        f"Timezone saved: {timezone}. Reminder management will be available soon."
+        if language == "en"
+        else f"Часовой пояс сохранён: {timezone}. "
+        "Управление напоминаниями скоро будет доступно."
     )
     await callback.answer()

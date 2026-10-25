@@ -7,6 +7,7 @@ from telegramtodobotreminder.database.users import (
     create,
     get_by_telegram_id,
     update_language,
+    update_timezone,
 )
 
 
@@ -45,3 +46,13 @@ async def test_user_language_can_be_updated(database):
 
     user = await get_by_telegram_id(database, telegram_id=123)
     assert user["language"] == "en"
+
+
+@pytest.mark.asyncio
+async def test_user_timezone_can_be_updated(database):
+    await create(database, telegram_id=123, language="en")
+
+    await update_timezone(database, telegram_id=123, timezone="Europe/Berlin")
+
+    user = await get_by_telegram_id(database, telegram_id=123)
+    assert user["timezone"] == "Europe/Berlin"

@@ -43,3 +43,17 @@ async def update_language(
         (language, _utc_now(), telegram_id),
     )
     await connection.commit()
+
+
+async def update_timezone(
+    connection: aiosqlite.Connection, telegram_id: int, timezone: str
+) -> None:
+    await connection.execute(
+        """
+        UPDATE users
+        SET timezone = ?, updated_at = ?
+        WHERE telegram_id = ?
+        """,
+        (timezone, _utc_now(), telegram_id),
+    )
+    await connection.commit()
