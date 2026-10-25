@@ -1,24 +1,11 @@
 import aiosqlite
 import pytest
-import pytest_asyncio
-
-from telegramtodobotreminder.database.connection import initialize
 from telegramtodobotreminder.database.users import (
     create,
     get_by_telegram_id,
     update_language,
     update_timezone,
 )
-
-
-@pytest_asyncio.fixture
-async def database():
-    connection = await aiosqlite.connect(":memory:")
-    await initialize(connection)
-    yield connection
-    await connection.close()
-
-
 @pytest.mark.asyncio
 async def test_user_registration_is_persisted(database):
     await create(database, telegram_id=123, language="en")

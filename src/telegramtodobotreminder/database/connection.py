@@ -28,4 +28,17 @@ async def initialize(connection: aiosqlite.Connection) -> None:
         )
         """
     )
+    await connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS reminders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            title TEXT NOT NULL CHECK (length(trim(title)) > 0),
+            remind_at TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('scheduled', 'completed', 'cancelled')),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
     await connection.commit()
