@@ -1,14 +1,18 @@
 import aiosqlite
-from datetime import datetime
+from datetime import date, datetime
 from aiogram import Router
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
+from aiogram import F
 from aiogram.types import CallbackQuery, Message
 
 from telegramtodobotreminder.database import reminders, users
 from telegramtodobotreminder.keyboards import (
     delete_confirmation_keyboard,
+    cancel_keyboard,
+    date_picker_keyboard,
     language_keyboard,
+    main_menu_keyboard,
     reminder_actions_keyboard,
     timezone_keyboard,
 )
@@ -41,7 +45,10 @@ async def start_handler(message: Message, database: aiosqlite.Connection) -> Non
         else "С возвращением! Используйте /newreminder для создания "
         "напоминания или /reminders для просмотра списка."
     )
-    await message.answer(greeting)
+    await message.answer(
+        greeting,
+        reply_markup=main_menu_keyboard(user["language"]),
+    )
 
 
 @router.message(Command("timezone"))
@@ -80,6 +87,10 @@ async def language_handler(
         else "Язык сохранён. Теперь выберите часовой пояс:",
         reply_markup=timezone_keyboard(),
     )
+    await callback.message.answer(
+        "Choose an action:" if language == "en" else "Выберите действие:",
+        reply_markup=main_menu_keyboard(language),
+    )
     await callback.answer()
 
 
@@ -113,7 +124,25 @@ async def timezone_handler(
         "Используйте /newreminder для создания напоминания "
         "или /reminders для просмотра списка."
     )
+    await callback.message.answer(
+        "Choose an action:" if language == "en" else "Выберите действие:",
+        reply_markup=main_menu_keyboard(language),
+    )
     await callback.answer()
+
+
+@router.message(F.text.in_({"Create reminder", "Создать напоминание"}))
+async def create_reminder_button_handler(
+    message: Message, state: FSMContext, database: aiosqlite.Connection
+) -> None:
+    await new_reminder_handler(message, state, database)
+
+
+@router.message(F.text.in_({"My reminders", "Мои напоминания"}))
+async def list_reminders_button_handler(
+    message: Message, database: aiosqlite.Connection
+) -> None:
+    await reminders_list_handler(message, database)
 
 
 @router.message(Command("newreminder"))
@@ -128,7 +157,11 @@ async def new_reminder_handler(
         return
 
     await state.set_state(ReminderCreation.title)
-    await message.answer("Enter a reminder title, or /cancel to stop:")
+    user_language = user["language"]
+    await message.answer(
+        "Enter a reminder title:" if user_language == "en" else "Введите название напоминания:",
+        reply_markup=cancel_keyboard(user_language),
+    )
 
 
 @router.message(Command("cancel"))
@@ -138,7 +171,16 @@ async def cancel_handler(message: Message, state: FSMContext) -> None:
         await message.answer("There is no active operation.")
         return
     await state.clear()
-    await message.answer("Reminder creation cancelled.")
+    await message.answer("Reminder creation cancelled.", reply_markup=main_menu_keyboard("en"))
+
+
+@router.message(F.text.in_({"Cancel", "Отмена"}))
+async def cancel_button_handler(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await message.answer(
+        "Reminder creation cancelled.",
+        reply_markup=main_menu_keyboard("en"),
+    )
 
 
 @router.message(ReminderCreation.title)
@@ -149,7 +191,38 @@ async def reminder_title_handler(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(title=title)
     await state.set_state(ReminderCreation.date)
-    await message.answer("Enter the event date (YYYY-MM-DD):")
+    await message.answer(
+        "Choose the event date or enter it manually (YYYY-MM-DD):",
+        reply_markup=date_picker_keyboard(date.today().year, date.today().month, "en"),
+    )
+
+
+@router.callback_query(lambda callback: callback.data == "calendar:manual")
+async def manual_date_handler(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.set_state(ReminderCreation.date)
+    await callback.message.answer("Enter the event date (YYYY-MM-DD):")
+    await callback.answer()
+
+
+@router.callback_query(lambda callback: callback.data.startswith("calendar:date:"))
+async def calendar_date_handler(callback: CallbackQuery, state: FSMContext) -> None:
+    selected_date = callback.data.removeprefix("calendar:date:")
+    try:
+        datetime.strptime(selected_date, "%Y-%m-%d")
+    except ValueError:
+        await callback.answer("Invalid date.", show_alert=True)
+        return
+    await state.update_data(date=selected_date)
+    await state.set_state(ReminderCreation.time)
+    await callback.message.edit_text(
+        f"Selected date: {selected_date}\nEnter the event time (HH:MM):"
+    )
+    await callback.answer()
+
+
+@router.callback_query(lambda callback: callback.data == "calendar:ignore")
+async def calendar_ignore_handler(callback: CallbackQuery) -> None:
+    await callback.answer()
 
 
 @router.message(ReminderCreation.date)

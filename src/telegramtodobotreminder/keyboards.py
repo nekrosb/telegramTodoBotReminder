@@ -1,4 +1,12 @@
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+import calendar
+from datetime import date
+
+from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+)
 
 from telegramtodobotreminder.timezones import COMMON_TIMEZONES
 
@@ -56,3 +64,64 @@ def delete_confirmation_keyboard(reminder_id: int) -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+
+def main_menu_keyboard(language: str) -> ReplyKeyboardMarkup:
+    labels = (
+        ("Create reminder", "My reminders", "Settings")
+        if language == "en"
+        else ("Создать напоминание", "Мои напоминания", "Настройки")
+    )
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=label) for label in labels]],
+        resize_keyboard=True,
+    )
+
+
+def cancel_keyboard(language: str) -> ReplyKeyboardMarkup:
+    label = "Cancel" if language == "en" else "Отмена"
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=label)]],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+
+
+def date_picker_keyboard(year: int, month: int, language: str) -> InlineKeyboardMarkup:
+    month_name = calendar.month_name[month]
+    weekdays = ("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
+    rows = [[InlineKeyboardButton(text=day, callback_data="calendar:ignore") for day in weekdays]]
+    for week in calendar.monthcalendar(year, month):
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=str(day) if day else " ",
+                    callback_data=(
+                        f"calendar:date:{year:04d}-{month:02d}-{day:02d}"
+                        if day
+                        else "calendar:ignore"
+                    ),
+                )
+                for day in week
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=f"{month_name} {year}", callback_data="calendar:ignore"
+            )
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Enter date manually" if language == "en" else "Ввести дату вручную",
+                callback_data="calendar:manual",
+            ),
+            InlineKeyboardButton(
+                text="Cancel" if language == "en" else "Отмена",
+                callback_data="creation:cancel",
+            ),
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
